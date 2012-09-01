@@ -1,6 +1,7 @@
 package sample
 
 import akka.actor.{ActorRef, ActorLogging, Actor}
+import akka.util.duration._
 import collection.mutable
 import util.Random
 
@@ -17,6 +18,7 @@ class Worker extends Actor with ActorLogging {
 
   val nodes = mutable.Buffer[ActorRef]()
   val random = new Random(System.nanoTime)
+  val processNodeStateDurations = mutable.Buffer[Long]()
 
   /**
    * Simulates some processing time.
@@ -31,14 +33,26 @@ class Worker extends Actor with ActorLogging {
 
   def init(nodes: Seq[ActorRef]) {
     this.nodes ++= nodes
+    context.system.scheduler.schedule(1 seconds, 1 seconds, self, ProcessStatistics)
     visitNode(nextNode)
   }
 
   def processNodeState(state: Int) {
 //    log.debug("Processing node state")
-//    val startTime = System.currentTimeMillis
+    val startTime = System.currentTimeMillis
     count(random.nextInt(10e4.toInt))
-//    log.debug("Node state processed, took {} milliseconds", System.currentTimeMillis - startTime)
+    val endTime = System.currentTimeMillis - startTime
+//    log.debug("Node state processed, took {} milliseconds", endTime)
+    processNodeStateDurations += endTime
+  }
+
+  def processStatistics() {
+    val processNodeStateDuration = if (processNodeStateDurations.size > 0)
+      processNodeStateDurations.sum / processNodeStateDurations.size
+    else
+      0
+    context.parent ! Statistics(processNodeStateDuration)
+    processNodeStateDurations.clear()
   }
 
   protected def receive = {
@@ -47,6 +61,8 @@ class Worker extends Actor with ActorLogging {
     case Node.State(state) =>
       processNodeState(state)
       visitNode(nextNode)
+    case ProcessStatistics =>
+      processStatistics()
   }
 
   def visitNode(node: ActorRef) {
@@ -58,4 +74,6 @@ class Worker extends Actor with ActorLogging {
 object Worker {
 
   case class Init(nodes: Seq[ActorRef])
+  case object ProcessStatistics
+  case class Statistics(processTime: Double)
 }
