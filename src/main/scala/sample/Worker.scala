@@ -1,8 +1,6 @@
 package sample
 
-import akka.actor.{ActorRef, ActorLogging, Actor}
-import akka.util.duration._
-import collection.mutable
+import akka.actor.ActorRef
 import util.Random
 
 /**
@@ -12,13 +10,7 @@ import util.Random
  * Time: 13:13
  */
 
-class Worker extends Actor with ActorLogging {
-
-  import Worker._
-
-  val nodes = mutable.Buffer[ActorRef]()
-  val random = new Random(System.nanoTime)
-  val processNodeStateDurations = mutable.Buffer[Long]()
+class Worker(val destination: ActorRef, val path: Seq[ActorRef]) {
 
   /**
    * Simulates some processing time.
@@ -27,53 +19,21 @@ class Worker extends Actor with ActorLogging {
     (1 to countLimit).foreach { _ => }
   }
 
-  def nextNode = {
-    nodes(random.nextInt(nodes.size))
+  def nextNode(node: ActorRef, nodes: Seq[ActorRef], random: Random, state: Int) = {
+    // In my real application next node depends on current node and its state. It takes some time to compute next node.
+    // This behaviour is simulated by simple counting.
+    val time = processNodeState(state, random)
+    (new Worker(destination, node +: path), nodes(random.nextInt(nodes.size)), time)
   }
 
-  def init(nodes: Seq[ActorRef]) {
-    this.nodes ++= nodes
-    context.system.scheduler.schedule(1 seconds, 1 seconds, self, ProcessStatistics)
-    visitNode(nextNode)
-  }
-
-  def processNodeState(state: Int) {
-//    log.debug("Processing node state")
+  def processNodeState(state: Int, random: Random) = {
     val startTime = System.currentTimeMillis
     count(random.nextInt(10e4.toInt))
-    val endTime = System.currentTimeMillis - startTime
-//    log.debug("Node state processed, took {} milliseconds", endTime)
-    processNodeStateDurations += endTime
-  }
-
-  def processStatistics() {
-    val processNodeStateDuration = if (processNodeStateDurations.size > 0)
-      processNodeStateDurations.sum / processNodeStateDurations.size
-    else
-      0
-    context.parent ! Statistics(processNodeStateDuration)
-    processNodeStateDurations.clear()
-  }
-
-  protected def receive = {
-    case Init(nodes) =>
-      init(nodes)
-    case Node.State(state) =>
-      processNodeState(state)
-      visitNode(nextNode)
-    case ProcessStatistics =>
-      processStatistics()
-  }
-
-  def visitNode(node: ActorRef) {
-//    log.debug("Visiting node")
-    node ! Node.Enter
+    System.currentTimeMillis - startTime
   }
 }
 
 object Worker {
 
-  case class Init(nodes: Seq[ActorRef])
-  case object ProcessStatistics
-  case class Statistics(processTime: Double)
+  def apply(destination: ActorRef) = new Worker(destination, Seq())
 }

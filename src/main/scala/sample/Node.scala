@@ -1,8 +1,9 @@
 package sample
 
-import akka.actor.{ActorRef, Props, ActorLogging, Actor}
+import akka.actor.{ActorRef, ActorLogging, Actor}
 import akka.util.duration._
 import collection.mutable
+import util.Random
 
 /**
  * Created by IntelliJ IDEA.
@@ -15,48 +16,65 @@ class Node extends Actor with ActorLogging {
 
   import Node._
 
-  val masterStatistics = mutable.Map[ActorRef, Double]()
-  var workersPerSecond = 0
-  var state: Int = _
+  val nodes = mutable.Buffer[ActorRef]()
+  val random = new Random(System.nanoTime)
+  var processedWorkers = 0
+  val processStateDurations = mutable.Buffer[Long]()
+  val state = random.nextInt
 
-  context.actorOf(Props[Master], Master.ActorName)
-
-  def init(initialState: Int, nodes: Seq[ActorRef]) {
-    state = initialState
-    context.actorFor(Master.ActorName) ! Master.Init(nodes)
+  def init(nodes: Seq[ActorRef]) {
+    this.nodes ++= mutable.Buffer(nodes: _*)
+    context.system.scheduler.schedule(1 seconds, 1 seconds, self, LaunchWorkers)
     context.system.scheduler.schedule(1 seconds, 1 seconds, self, ProcessStatistics)
   }
 
-  def processStatistics() {
-    val processNodeStateDuration = if (masterStatistics.size > 0) {
-      masterStatistics.map {
-        case (ant, processNodeStateDuration) => processNodeStateDuration
-      }.sum / masterStatistics.size
-    } else {
-      0
+  def launchWorkers(nodes: Seq[ActorRef]) {
+    nodes.foreach { node =>
+      val worker = Worker(node)
+      val (worker1, nextNode, time) = worker.nextNode(self, nodes.toSeq, random, state)
+      nextNode ! worker1
+      processStateDurations += time
     }
-    val statistics = Statistics(processNodeStateDuration, workersPerSecond)
+  }
+
+  def processStatistics() {
+    val processNodeStateDuration = if (processStateDurations.size > 0)
+      processStateDurations.sum / processStateDurations.size
+    else
+      0
+    val statistics = Statistics(processNodeStateDuration, processedWorkers)
     sendStatistics(statistics)
 //    log.debug("{}", statistics)
     resetStatistics()
   }
 
+  def processWorker(worker: Worker) {
+    if (worker.destination == self || worker.path.length >= Main.MaxPathLength) {
+      // destination or max allowed path length reached
+    } else {
+      val (worker1, nextNode, time) = worker.nextNode(self, nodes.toSeq, random, state)
+      nextNode ! worker1
+      processStateDurations += time
+    }
+  }
+
   protected def receive = {
-    case Enter =>
-      sender ! State(state)
-      workersPerSecond += 1
-    case Init(initialState, nodes) =>
-      init(initialState, nodes)
-    case Master.Statistics(processNodeStateDuration) =>
-      masterStatistics += sender -> processNodeStateDuration
+    case Init(nodes) =>
+      init(nodes)
+    case LaunchWorkers =>
+      launchWorkers(nodes.toSeq)
     case ProcessStatistics =>
       processStatistics()
     case UpdateState(newState) =>
       // update state
+    case worker: Worker =>
+      processWorker(worker)
+      processedWorkers += 1
   }
 
   def resetStatistics() {
-    workersPerSecond = 0
+    processedWorkers = 0
+    processStateDurations.clear()
   }
 
   def sendStatistics(statistics: Statistics) {
@@ -67,9 +85,9 @@ class Node extends Actor with ActorLogging {
 object Node {
 
   case object Enter
-  case class Init(initialState: Int, nodes: Seq[ActorRef])
+  case class Init(nodes: Seq[ActorRef])
+  case object LaunchWorkers
   case object ProcessStatistics
-  case class State(state: Int)
   case class Statistics(processNodeStateDuration: Double, workersPerSecond: Int)
   case class UpdateState(newState: Int)
 }
