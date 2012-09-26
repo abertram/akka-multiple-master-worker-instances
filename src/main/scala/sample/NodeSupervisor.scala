@@ -33,13 +33,13 @@ class NodeSupervisor extends Actor with ActorLogging {
   }
 
   def processStatistics() {
-    log.debug("Idle time: {}", nodeStatistics.map {
+    log.info("Idle time: {}", nodeStatistics.map {
       case (_, (idleTime, _, _)) => idleTime
     }.sum / nodeStatistics.size)
-    log.debug("Processed workers per node and second: {}", nodeStatistics.map {
+    log.info("Processed workers per node and second: {}", nodeStatistics.map {
       case (_, (_, _, workersPerSecond)) => workersPerSecond
     }.sum / nodeStatistics.size)
-    log.debug("Average process node state duration: {} ms", nodeStatistics.map {
+    log.info("Average process node state duration: {} ms", nodeStatistics.map {
       case (_, (_, processNodeStateDuration, _)) => processNodeStateDuration
     }.sum / nodeStatistics.size)
   }
