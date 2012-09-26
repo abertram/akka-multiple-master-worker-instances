@@ -4,6 +4,7 @@ import akka.actor.{ActorRef, ActorLogging, Actor}
 import akka.util.duration._
 import collection.mutable
 import util.Random
+import akka.util.Duration
 
 /**
  * Created by IntelliJ IDEA.
@@ -16,6 +17,8 @@ class Node extends Actor with ActorLogging {
 
   import Node._
 
+  val idleTimes = mutable.Buffer[Long]()
+  var lastReceiveTime: Option[Long] = None
   val nodes = mutable.Buffer[ActorRef]()
   val random = new Random(System.nanoTime)
   var processedWorkers = 0
@@ -24,7 +27,7 @@ class Node extends Actor with ActorLogging {
 
   def init(nodes: Seq[ActorRef]) {
     this.nodes ++= mutable.Buffer(nodes: _*)
-    context.system.scheduler.schedule(1 seconds, 1 seconds, self, LaunchWorkers)
+    context.system.scheduler.schedule(Duration.Zero, 5 seconds, self, LaunchWorkers)
     context.system.scheduler.schedule(1 seconds, 1 seconds, self, ProcessStatistics)
   }
 
@@ -38,11 +41,15 @@ class Node extends Actor with ActorLogging {
   }
 
   def processStatistics() {
-    val processNodeStateDuration = if (processStateDurations.size > 0)
-      processStateDurations.sum / processStateDurations.size
+    val idleTime = if (idleTimes.size > 0)
+      idleTimes.sum.toDouble / idleTimes.size
     else
       0
-    val statistics = Statistics(processNodeStateDuration, processedWorkers)
+    val processNodeStateDuration = if (processStateDurations.size > 0)
+      processStateDurations.sum.toDouble / processStateDurations.size
+    else
+      0
+    val statistics = Statistics(idleTime, processNodeStateDuration, processedWorkers)
     sendStatistics(statistics)
 //    log.debug("{}", statistics)
     resetStatistics()
@@ -60,19 +67,30 @@ class Node extends Actor with ActorLogging {
 
   protected def receive = {
     case Init(nodes) =>
+      lastReceiveTime.map(idleTimes += System.currentTimeMillis - _)
+      lastReceiveTime = Some(System.currentTimeMillis)
       init(nodes)
     case LaunchWorkers =>
+      lastReceiveTime.map(idleTimes += System.currentTimeMillis - _)
+      lastReceiveTime = Some(System.currentTimeMillis)
       launchWorkers(nodes.toSeq)
     case ProcessStatistics =>
+      lastReceiveTime.map(idleTimes += System.currentTimeMillis - _)
+      lastReceiveTime = Some(System.currentTimeMillis)
       processStatistics()
     case UpdateState(newState) =>
+      lastReceiveTime.map(idleTimes += System.currentTimeMillis - _)
+      lastReceiveTime = Some(System.currentTimeMillis)
       // update state
     case worker: Worker =>
+      lastReceiveTime.map(idleTimes += System.currentTimeMillis - _)
+      lastReceiveTime = Some(System.currentTimeMillis)
       processWorker(worker)
       processedWorkers += 1
   }
 
   def resetStatistics() {
+    idleTimes.clear()
     processedWorkers = 0
     processStateDurations.clear()
   }
@@ -88,6 +106,6 @@ object Node {
   case class Init(nodes: Seq[ActorRef])
   case object LaunchWorkers
   case object ProcessStatistics
-  case class Statistics(processNodeStateDuration: Double, workersPerSecond: Int)
+  case class Statistics(idleTime: Double, processNodeStateDuration: Double, workersPerSecond: Int)
   case class UpdateState(newState: Int)
 }

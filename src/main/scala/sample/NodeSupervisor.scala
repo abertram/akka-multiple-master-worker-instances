@@ -15,13 +15,13 @@ class NodeSupervisor extends Actor with ActorLogging {
 
   import NodeSupervisor._
 
-  val nodeStatistics = mutable.Map[ActorRef, (Double, Int)]()
+  val nodeStatistics = mutable.Map[ActorRef, (Double, Double, Int)]()
 
   override def preStart() {
     log.info("Creating {} nodes", Main.NodeCount)
     val nodes = (1 to Main.NodeCount).map { _ =>
       val node = context.actorOf(Props[Node])
-      nodeStatistics += node -> (0.0, 0)
+      nodeStatistics += node -> (0.0, 0.0, 0)
       node
     }
     log.info("{} nodes created", context.children.size)
@@ -33,17 +33,20 @@ class NodeSupervisor extends Actor with ActorLogging {
   }
 
   def processStatistics() {
+    log.debug("Idle time: {}", nodeStatistics.map {
+      case (_, (idleTime, _, _)) => idleTime
+    }.sum / nodeStatistics.size)
     log.debug("Processed workers per node and second: {}", nodeStatistics.map {
-      case (node, (_, workersPerSecond)) => workersPerSecond
+      case (_, (_, _, workersPerSecond)) => workersPerSecond
     }.sum / nodeStatistics.size)
     log.debug("Average process node state duration: {} ms", nodeStatistics.map {
-      case (node, (processNodeStateDuration, _)) => processNodeStateDuration
+      case (_, (_, processNodeStateDuration, _)) => processNodeStateDuration
     }.sum / nodeStatistics.size)
   }
 
   protected def receive = {
-    case Node.Statistics(processNodeStateDuration, workersPerSecond) =>
-      nodeStatistics += sender -> (processNodeStateDuration, workersPerSecond)
+    case Node.Statistics(idleTime, processNodeStateDuration, workersPerSecond) =>
+      nodeStatistics += sender -> (idleTime, processNodeStateDuration, workersPerSecond)
     case ProcessStatistics =>
       processStatistics()
   }

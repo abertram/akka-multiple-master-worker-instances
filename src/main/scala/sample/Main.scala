@@ -11,7 +11,7 @@ import akka.actor.{Props, ActorSystem}
 
 object Main extends App {
 
-  val MaxPathLength = 10
+  val MaxPathLength = 20
   val NodeCount = 100
 
   val system = ActorSystem()

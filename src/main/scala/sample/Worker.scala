@@ -28,7 +28,7 @@ class Worker(val destination: ActorRef, val path: Seq[ActorRef]) {
 
   def processNodeState(state: Int, random: Random) = {
     val startTime = System.currentTimeMillis
-    count(random.nextInt(10e4.toInt))
+    count(random.nextInt(30e3.toInt) + 10e2.toInt)
     System.currentTimeMillis - startTime
   }
 }
